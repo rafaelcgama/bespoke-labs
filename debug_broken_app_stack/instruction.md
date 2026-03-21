@@ -1,37 +1,35 @@
-# Fix the Broken Application Stack
+# Fix the Broken Data Pipeline Service
 
-After a recent infrastructure update, the company's internal API has stopped working. The application stack consists of:
+After a recent refactoring, the company's data pipeline monitoring API stopped working. The service consists of:
 
 - **Nginx** as a reverse proxy (config at `/etc/nginx/sites-available/default`)
-- **Gunicorn** serving a Flask API application (config at `/app/gunicorn_config.py`)
+- **Gunicorn** serving a Flask API (config at `/app/gunicorn_config.py`)
 - **Redis** for caching (config at `/etc/redis/redis.conf`)
-- **SQLite** for data persistence (database at `/app/data/app.db`)
-- **supervisord** managing all processes (config at `/etc/supervisor/conf.d/app.conf`)
+- **SQLite** for pipeline run data (database at `/app/data/app.db`)
+- **Supervisord** managing all processes (config at `/etc/supervisor/conf.d/app.conf`)
 
-All application source files are located in `/app/`.
+All application source files are in `/app/`.
 
 ## Your Task
 
-Diagnose and fix all issues preventing the application from working correctly. The system has multiple configuration and code problems that need to be resolved. You will need to carefully analyze logs, compare configurations across components, and understand how the services interact with each other.
+Diagnose and fix all issues preventing the service from working. Multiple things broke during the refactoring — you'll need to compare configurations across different components and trace how the services connect.
 
 ## Success Criteria
 
-Once all issues are fixed, the following must work:
+1. `curl http://localhost/api/health` returns HTTP 200 with `"status": "healthy"` and all checks (`database`, `cache`) showing `"ok"`.
 
-1. `curl http://localhost/api/health` must return HTTP 200 with a JSON response showing:
-   - `"status": "healthy"`
-   - All component checks (`database` and `cache`) showing `"ok"`
+2. `curl http://localhost/api/runs` returns HTTP 200 with 5 pipeline run records, each with `id`, `pipeline_name`, `status`, `records_processed`, `started_at`, and `duration_sec` fields.
 
-2. `curl http://localhost/api/users` must return HTTP 200 with all 5 seeded users, each having `id`, `name`, `email`, and `role` fields.
+3. `curl http://localhost/api/metrics` returns HTTP 200 with aggregated pipeline metrics.
 
-3. Redis caching must be functional — subsequent requests to `/api/users` should return data sourced from the cache.
+4. Redis caching works — subsequent requests to `/api/runs` should come from cache.
 
-4. The database initialization script (`/app/init_db.py`) must correctly persist data when executed.
+5. The database initialization script (`/app/init_db.py`) must correctly persist data when executed.
 
 ## Where to Look
 
 - Service logs: `/var/log/supervisor/`, `/var/log/nginx/`, `/var/log/gunicorn/`
 - Service status: `supervisorctl status`
 - Application source: `/app/app.py`, `/app/init_db.py`
-- Configuration files: Check each service's config for consistency with others
-- After making fixes, restart affected services using `supervisorctl restart <service>` or `nginx -s reload`
+- Compare configurations across files for consistency
+- After making fixes, restart affected services

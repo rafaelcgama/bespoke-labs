@@ -9,7 +9,6 @@ app = Flask(__name__)
 
 DB_PATH = '/app/data/app.db'
 
-# Redis configuration
 redis_client = redis.StrictRedis(
     host='localhost',
     port=6379,
@@ -30,20 +29,18 @@ def get_db():
 def health():
     checks = {}
 
-    # Check database
     try:
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='users'"
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='pipeline_runs'"
         )
         table_exists = cursor.fetchone()[0] > 0
         conn.close()
-        checks['database'] = 'ok' if table_exists else 'error'
+        checks['database'] = 'ok' if table_exists else 'error: table not found'
     except Exception as e:
         checks['database'] = f'error: {str(e)}'
 
-    # Check Redis
     try:
         redis_client.ping()
         checks['cache'] = 'ok'
@@ -52,39 +49,58 @@ def health():
 
     all_ok = all(v == 'ok' for v in checks.values())
     status = 'healthy' if all_ok else 'degraded'
-    code = 200 if all_ok else 503
-
-    return jsonify({'status': status, 'checks': checks}), code
+    return jsonify({'status': status, 'checks': checks}), 200 if all_ok else 503
 
 
-@app.route('/api/users')
-def get_users():
-    # Try cache first
+@app.route('/api/runs')
+def get_runs():
+    # try cache first
     try:
-        cached = redis_client.get('users_cache')
+        cached = redis_client.get('runs_cache')
         if cached:
-            return jsonify({'source': 'cache', 'users': json.loads(cached)})
+            return jsonify({'source': 'cache', 'runs': json.loads(cached)})
     except Exception:
         pass
 
-    # Fall back to database
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, name, email, role FROM users")
-        users = [dict(row) for row in cursor.fetchall()]
+        cursor.execute(
+            "SELECT id, pipeline_name, status, records_processed, started_at, duration_sec "
+            "FROM pipeline_runs"
+        )
+        runs = [dict(row) for row in cursor.fetchall()]
         conn.close()
 
-        # Cache the result for 5 minutes
         try:
-            redis_client.setex('users_cache', 300, json.dumps(users))
+            redis_client.setex('runs_cache', 300, json.dumps(runs))
         except Exception:
             pass
 
-        return jsonify({'source': 'database', 'users': users})
+        return jsonify({'source': 'database', 'runs': runs})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/metrics')
+def get_metrics():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT
+                count(*) as total_runs,
+                sum(records_processed) as total_records,
+                round(avg(duration_sec), 2) as avg_duration,
+                sum(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful_runs
+            FROM pipeline_runs
+        """)
+        row = dict(cursor.fetchone())
+        conn.close()
+        return jsonify({'metrics': row})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000)
+    app.run(host='0.0.0.0', port=5000)

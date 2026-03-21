@@ -5,7 +5,6 @@ import time
 
 
 def run_cmd(cmd, timeout=15):
-    """Run a shell command and return the result."""
     result = subprocess.run(
         cmd, shell=True, capture_output=True, text=True, timeout=timeout
     )
@@ -13,7 +12,6 @@ def run_cmd(cmd, timeout=15):
 
 
 def curl_with_retry(url, max_retries=5, delay=2):
-    """Curl a URL with retries, returning (body, status_code)."""
     for i in range(max_retries):
         try:
             result = run_cmd(
@@ -32,142 +30,139 @@ def curl_with_retry(url, max_retries=5, delay=2):
 
 
 class TestServicesRunning:
-    """Verify all services are running."""
 
     def test_nginx_is_running(self):
         result = run_cmd("pgrep -x nginx")
-        assert result.returncode == 0, "Nginx process is not running"
+        assert result.returncode == 0, "Nginx is not running"
 
     def test_gunicorn_is_running(self):
         result = run_cmd("pgrep -f gunicorn")
-        assert result.returncode == 0, "Gunicorn process is not running"
+        assert result.returncode == 0, "Gunicorn is not running"
 
     def test_redis_is_running(self):
         result = run_cmd("pgrep -x redis-server")
-        assert result.returncode == 0, "Redis server process is not running"
+        assert result.returncode == 0, "Redis is not running"
 
 
 class TestHealthEndpoint:
-    """Verify the /api/health endpoint works correctly."""
 
     def test_health_returns_200(self):
         body, status = curl_with_retry("http://localhost/api/health")
-        assert status == 200, f"Health endpoint returned HTTP {status}, expected 200"
+        assert status == 200, f"Expected 200, got {status}"
 
     def test_health_status_is_healthy(self):
         body, status = curl_with_retry("http://localhost/api/health")
-        assert body is not None, "Health endpoint returned no response"
+        assert body is not None, "No response from health endpoint"
         data = json.loads(body)
         assert data['status'] == 'healthy', (
-            f"Health status is '{data['status']}', expected 'healthy'. "
-            f"Checks: {data.get('checks', {})}"
+            f"Status is '{data['status']}', checks: {data.get('checks')}"
         )
 
-    def test_health_database_check_ok(self):
+    def test_health_database_ok(self):
         body, _ = curl_with_retry("http://localhost/api/health")
         data = json.loads(body)
         assert data['checks']['database'] == 'ok', (
-            f"Database check failed: {data['checks']['database']}"
+            f"Database check: {data['checks']['database']}"
         )
 
-    def test_health_cache_check_ok(self):
+    def test_health_cache_ok(self):
         body, _ = curl_with_retry("http://localhost/api/health")
         data = json.loads(body)
         assert data['checks']['cache'] == 'ok', (
-            f"Cache check failed: {data['checks']['cache']}"
+            f"Cache check: {data['checks']['cache']}"
         )
 
 
-class TestUsersEndpoint:
-    """Verify the /api/users endpoint returns correct data."""
+class TestRunsEndpoint:
 
-    def test_users_returns_200(self):
-        body, status = curl_with_retry("http://localhost/api/users")
-        assert status == 200, f"Users endpoint returned HTTP {status}, expected 200"
+    def test_runs_returns_200(self):
+        body, status = curl_with_retry("http://localhost/api/runs")
+        assert status == 200, f"Expected 200, got {status}"
 
-    def test_users_returns_nonempty_list(self):
-        body, _ = curl_with_retry("http://localhost/api/users")
+    def test_runs_returns_five_records(self):
+        body, _ = curl_with_retry("http://localhost/api/runs")
         data = json.loads(body)
-        assert len(data['users']) > 0, "Users endpoint returned an empty list"
-
-    def test_users_returns_exactly_five(self):
-        body, _ = curl_with_retry("http://localhost/api/users")
-        data = json.loads(body)
-        assert len(data['users']) == 5, (
-            f"Expected 5 users, got {len(data['users'])}"
+        assert len(data['runs']) == 5, (
+            f"Expected 5 runs, got {len(data['runs'])}"
         )
 
-    def test_users_have_required_fields(self):
-        body, _ = curl_with_retry("http://localhost/api/users")
+    def test_runs_have_required_fields(self):
+        body, _ = curl_with_retry("http://localhost/api/runs")
         data = json.loads(body)
-        required_fields = {'id', 'name', 'email', 'role'}
-        for user in data['users']:
-            missing = required_fields - set(user.keys())
-            assert not missing, f"User {user} missing fields: {missing}"
+        required = {'id', 'pipeline_name', 'status', 'records_processed',
+                     'started_at', 'duration_sec'}
+        for run in data['runs']:
+            missing = required - set(run.keys())
+            assert not missing, f"Run {run} missing fields: {missing}"
 
-    def test_alice_johnson_exists(self):
-        body, _ = curl_with_retry("http://localhost/api/users")
+    def test_user_import_pipeline_exists(self):
+        body, _ = curl_with_retry("http://localhost/api/runs")
         data = json.loads(body)
-        names = [u['name'] for u in data['users']]
-        assert 'Alice Johnson' in names, (
-            f"Alice Johnson not found. Users: {names}"
-        )
+        names = [r['pipeline_name'] for r in data['runs']]
+        assert 'user_import' in names, f"user_import not in {names}"
 
-    def test_admin_role_exists(self):
-        body, _ = curl_with_retry("http://localhost/api/users")
+    def test_has_completed_and_failed_runs(self):
+        body, _ = curl_with_retry("http://localhost/api/runs")
         data = json.loads(body)
-        roles = [u['role'] for u in data['users']]
-        assert 'admin' in roles, f"No admin role found. Roles: {roles}"
+        statuses = set(r['status'] for r in data['runs'])
+        assert 'completed' in statuses, f"No completed runs in {statuses}"
+        assert 'failed' in statuses, f"No failed runs in {statuses}"
 
 
-class TestRedisCaching:
-    """Verify Redis caching is functional."""
+class TestMetricsEndpoint:
 
-    def test_second_request_served_from_cache(self):
-        # Clear any existing cache
+    def test_metrics_returns_200(self):
+        body, status = curl_with_retry("http://localhost/api/metrics")
+        assert status == 200, f"Expected 200, got {status}"
+
+    def test_metrics_total_runs(self):
+        body, _ = curl_with_retry("http://localhost/api/metrics")
+        data = json.loads(body)
+        assert data['metrics']['total_runs'] == 5
+
+    def test_metrics_successful_runs(self):
+        body, _ = curl_with_retry("http://localhost/api/metrics")
+        data = json.loads(body)
+        assert data['metrics']['successful_runs'] == 4
+
+
+class TestCaching:
+
+    def test_second_request_from_cache(self):
         run_cmd(
             "redis-cli -a \"$(grep requirepass /etc/redis/redis.conf "
-            "| sed 's/requirepass //;s/\"//g')\" DEL users_cache 2>/dev/null"
+            "| sed 's/requirepass //;s/\"//g')\" DEL runs_cache 2>/dev/null"
         )
-        # First request populates cache from database
-        curl_with_retry("http://localhost/api/users")
+        curl_with_retry("http://localhost/api/runs")
         time.sleep(1)
-        # Second request should come from cache
-        body, status = curl_with_retry("http://localhost/api/users")
+        body, status = curl_with_retry("http://localhost/api/runs")
         assert status == 200
         data = json.loads(body)
         assert data['source'] == 'cache', (
-            f"Expected 'cache' source on second request, got '{data['source']}'"
+            f"Expected 'cache', got '{data['source']}'"
         )
 
 
-class TestDatabaseInitScript:
-    """Verify that init_db.py correctly persists data."""
+class TestDatabaseInit:
 
-    def test_init_db_persists_data(self):
-        # Remove existing database
+    def test_init_persists_data(self):
         run_cmd("rm -f /app/data/app.db")
-        # Run init_db.py
         result = run_cmd("cd /app && python3 init_db.py")
-        assert result.returncode == 0, f"init_db.py failed: {result.stderr}"
-        # Verify data is actually persisted (new connection)
+        assert result.returncode == 0, f"init_db failed: {result.stderr}"
         verify = run_cmd(
             "python3 -c \""
             "import sqlite3; "
             "conn = sqlite3.connect('/app/data/app.db'); "
             "cursor = conn.cursor(); "
-            "cursor.execute('SELECT count(*) FROM users'); "
+            "cursor.execute('SELECT count(*) FROM pipeline_runs'); "
             "count = cursor.fetchone()[0]; "
             "conn.close(); "
             "print(count)\""
         )
         count = int(verify.stdout.strip())
-        assert count == 5, (
-            f"Expected 5 users persisted after init_db.py, got {count}. "
-            "The seed data was likely not committed to the database."
-        )
+        assert count == 5, f"Expected 5 runs persisted, got {count}"
 
-    def test_init_db_creates_correct_schema(self):
+    def test_init_creates_correct_schema(self):
         run_cmd("rm -f /app/data/app.db")
         run_cmd("cd /app && python3 init_db.py")
         verify = run_cmd(
@@ -175,13 +170,13 @@ class TestDatabaseInitScript:
             "import sqlite3; "
             "conn = sqlite3.connect('/app/data/app.db'); "
             "cursor = conn.cursor(); "
-            "cursor.execute('PRAGMA table_info(users)'); "
+            "cursor.execute('PRAGMA table_info(pipeline_runs)'); "
             "cols = [row[1] for row in cursor.fetchall()]; "
             "conn.close(); "
             "print(','.join(cols))\""
         )
         columns = verify.stdout.strip().split(',')
         assert 'id' in columns
-        assert 'name' in columns
-        assert 'email' in columns
-        assert 'role' in columns
+        assert 'pipeline_name' in columns
+        assert 'status' in columns
+        assert 'records_processed' in columns
