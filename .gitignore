@@ -1,0 +1,60 @@
+# Claude Code
+.claude/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Harbor/Docker
+.harbor/
+jobs/
+docker-compose.override.yml
+*.log
+sqlite_mcp_server.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Task-specific
+debug_broken_app_stack/**/data/
+debug_broken_app_stack/**/__pycache__/
+debug_broken_app_stack/**/*.pyc
