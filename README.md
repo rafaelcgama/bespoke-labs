@@ -15,13 +15,13 @@ A "Hard" difficulty DevOps debugging task for the Harbor Terminal Bench 2.0 fram
   - `task.toml` — Task metadata and configuration
   - `environment/` — The broken application environment (Docker setup)
   - `solution/` — The golden solution (`solve.sh`)
-  - `tests/` — Verification tests (16 pytest tests)
+  - `tests/` — Verification tests (18 pytest tests)
 
 ## The 3 Bugs Fixed
 
-1. **Nginx proxy mismatch:** Nginx configured to proxy to `127.0.0.1:8000` but Gunicorn binds to Unix socket `/tmp/gunicorn.sock`
-2. **Redis password mismatch:** redis.conf has `S3cure_P@ss2024` (with underscore) but Flask expects `S3cureP@ss2024` (no underscore)
-3. **Database not persisting:** init_db.py calls `conn.commit()` after CREATE TABLE but not after INSERT, so seed data is lost
+1. **Nginx proxy mismatch:** Nginx configured to proxy to `127.0.0.1:8000` but Gunicorn binds to `0.0.0.0:5000`
+2. **Database path mismatch:** `init_db.py` writes to `/app/data/pipeline.db` but `app.py` reads from `/app/data/app.db`
+3. **Missing Redis password:** Supervisord config doesn't pass `REDIS_PASSWORD` env var to Gunicorn, so Flask can't authenticate with Redis
 
 ## Solution Verification
 
@@ -30,15 +30,16 @@ Run the oracle test to verify the solution works:
 harbor run -p "./debug_broken_app_stack" -a oracle
 ```
 
-**Result:** All 16 tests pass (Mean: 1.000)
+**Result:** All 18 tests pass (Mean: 1.000)
 
 ## Test Coverage
 
-The 16 tests verify:
+The 18 tests verify:
 - ✓ All services running (Nginx, Gunicorn, Redis)
 - ✓ Health endpoint returns 200 with healthy status
 - ✓ Database and cache checks pass
-- ✓ `/api/users` returns all 5 seeded users
+- ✓ `/api/runs` returns all 5 seeded pipeline runs
+- ✓ `/api/metrics` returns aggregated pipeline metrics
 - ✓ Redis caching works (second request from cache)
 - ✓ Database initialization persists data correctly
 
